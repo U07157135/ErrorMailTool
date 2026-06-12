@@ -1,0 +1,212 @@
+@model ErrorMailTool.BLL.Models.ErrorMailDashboardDto
+@using System.Text.Json
+
+@{
+    ViewData["Title"] = "ErrorMail Dashboard";
+    var trendData = Model.TrendPoints.Select(point => new
+    {
+        label = point.Date.ToString("MM/dd"),
+        count = point.Count
+    });
+    var startDateValue = Model.SelectedStartDate?.ToString("yyyy-MM-dd");
+    var endDateValue = Model.SelectedEndDate?.ToString("yyyy-MM-dd");
+    var periodText = Model.IsDateFiltered
+        ? $"{Model.SelectedStartDate?.ToString("yyyy/MM/dd") ?? "最早"} - {Model.SelectedEndDate?.ToString("yyyy/MM/dd") ?? "今日"}"
+        : "近 14 天";
+}
+
+<section class="dashboard-header">
+    <div>
+        <h1>ErrorMail Dashboard</h1>
+        <p>@Model.BackupPath</p>
+        <p class="sync-meta">最後同步：@(Model.LastSyncedAt?.ToString("yyyy/MM/dd HH:mm:ss") ?? "尚未同步")</p>
+    </div>
+    <div class="dashboard-actions">
+        <span class="status-pill @(Model.BackupPathExists ? "status-ok" : "status-danger")">
+            @(Model.BackupPathExists ? "資料夾已連線" : "找不到資料夾")
+        </span>
+        <form method="post" asp-action="Sync" class="sync-form">
+            @Html.AntiForgeryToken()
+            <input type="hidden" name="startDate" value="@startDateValue" />
+            <input type="hidden" name="endDate" value="@endDateValue" />
+            <button type="submit" class="btn btn-success">同步 ErrorMail</button>
+        </form>
+    </div>
+</section>
+
+@if (TempData["SyncMessage"] is string syncMessage)
+{
+    <div class="alert alert-success" role="alert">@syncMessage</div>
+}
+
+@if (TempData["SyncError"] is string syncError)
+{
+    <div class="alert alert-danger" role="alert">@syncError</div>
+}
+
+@if (TempData["SyncErrors"] is string syncErrors)
+{
+    <div class="alert alert-warning" role="alert">
+        <strong>部分資料同步失敗：</strong>
+        <pre class="alert-pre">@syncErrors</pre>
+    </div>
+}
+
+@if (!Model.BackupPathExists)
+{
+    <div class="alert alert-danger" role="alert">
+        找不到 ErrorMail 備份資料夾。請確認 appsettings.json 的 ErrorMail:BackupPath 是否正確。
+    </div>
+}
+
+@if (!Model.DatabaseAvailable)
+{
+    <div class="alert alert-warning" role="alert">
+        <strong>資料庫尚未就緒或無法連線。</strong>
+        請確認 SQL Server LocalDB 可用，並已執行 EF migration/database update。
+        <div class="mt-2 text-break">@Model.DatabaseErrorMessage</div>
+    </div>
+}
+
+<section class="filter-section">
+    <form method="get" asp-action="Index" class="date-filter-form">
+        <div class="filter-field">
+            <label for="startDate">起始日期</label>
+            <input id="startDate" name="startDate" type="date" class="form-control" value="@startDateValue" />
+        </div>
+        <div class="filter-field">
+            <label for="endDate">結束日期</label>
+            <input id="endDate" name="endDate" type="date" class="form-control" value="@endDateValue" />
+        </div>
+        <div class="filter-actions">
+            <button type="submit" class="btn btn-primary">查詢</button>
+            <a asp-action="Index" class="btn btn-outline-secondary">清除</a>
+        </div>
+    </form>
+</section>
+
+<section class="metric-grid" aria-label="ErrorMail summary">
+    <div class="metric-card">
+        <span>顯示筆數</span>
+        <strong>@Model.TotalCount</strong>
+    </div>
+    <div class="metric-card">
+        <span>@periodText</span>
+        <strong>@Model.TrendPoints.Sum(point => point.Count)</strong>
+    </div>
+    <div class="metric-card">
+        <span>資料不完整</span>
+        <strong>@Model.IncompleteCount</strong>
+    </div>
+</section>
+
+<section class="chart-section">
+    <div class="section-heading">
+        <h2>ErrorMail 數量報表</h2>
+        <span>@periodText</span>
+    </div>
+    <div class="chart-wrap">
+        <canvas id="errorTrendChart" width="1100" height="300" aria-label="ErrorMail 數量圖表"></canvas>
+    </div>
+</section>
+
+<section class="mail-section">
+    <div class="section-heading">
+        <h2>ErrorMail 清單</h2>
+        <span>@Model.Items.Count 筆</span>
+    </div>
+    <div class="table-responsive mail-table-wrap">
+        <table class="table table-hover align-middle mail-table">
+            <thead>
+                <tr>
+                    <th>發生時間</th>
+                    <th>分類</th>
+                    <th>系統</th>
+                    <th>客戶</th>
+                    <th>店別</th>
+                    <th>版本</th>
+                    <th>Subject</th>
+                    <th class="text-end">附件</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var item in Model.Items)
+                {
+                    <tr>
+                        <td class="text-nowrap">@(item.OccurredAt?.ToString("yyyy/MM/dd HH:mm:ss") ?? "-")</td>
+                        <td><span class="badge text-bg-danger">@item.Category</span></td>
+                        <td>@item.SystemName</td>
+                        <td>@item.CustomerName</td>
+                        <td>@item.StoreName</td>
+                        <td class="text-nowrap">@item.Version</td>
+                        <td>
+                            <a asp-action="Details" asp-route-id="@item.Id" class="mail-subject">@item.Subject</a>
+                            @if (!item.IsContentComplete)
+                            {
+                                <span class="badge text-bg-warning ms-2">資料不完整</span>
+                            }
+                        </td>
+                        <td class="text-end">@item.AttachmentCount</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</section>
+
+@section Scripts {
+    <script>
+        (() => {
+            const data = @Html.Raw(JsonSerializer.Serialize(trendData));
+            const canvas = document.getElementById('errorTrendChart');
+            if (!canvas) {
+                return;
+            }
+
+            const context = canvas.getContext('2d');
+            const width = canvas.width;
+            const height = canvas.height;
+            const padding = { top: 24, right: 24, bottom: 44, left: 44 };
+            const chartWidth = width - padding.left - padding.right;
+            const chartHeight = height - padding.top - padding.bottom;
+            const maxValue = Math.max(1, ...data.map(item => item.count));
+            const barGap = data.length > 45 ? 3 : 10;
+            const barWidth = Math.max(4, (chartWidth / Math.max(1, data.length)) - barGap);
+            const labelStep = Math.max(1, Math.ceil(data.length / 18));
+
+            context.clearRect(0, 0, width, height);
+            context.font = '14px Segoe UI, sans-serif';
+            context.strokeStyle = '#d7dde7';
+            context.fillStyle = '#64748b';
+            context.lineWidth = 1;
+
+            for (let i = 0; i <= 4; i += 1) {
+                const y = padding.top + (chartHeight / 4) * i;
+                context.beginPath();
+                context.moveTo(padding.left, y);
+                context.lineTo(width - padding.right, y);
+                context.stroke();
+            }
+
+            data.forEach((item, index) => {
+                const x = padding.left + index * (chartWidth / Math.max(1, data.length)) + barGap / 2;
+                const barHeight = (item.count / maxValue) * chartHeight;
+                const y = padding.top + chartHeight - barHeight;
+
+                context.fillStyle = '#2563eb';
+                context.fillRect(x, y, barWidth, barHeight);
+
+                if (data.length <= 45 || item.count > 0) {
+                    context.fillStyle = '#0f172a';
+                    context.textAlign = 'center';
+                    context.fillText(item.count, x + barWidth / 2, y - 6);
+                }
+
+                if (index % labelStep === 0 || index === data.length - 1) {
+                    context.fillStyle = '#64748b';
+                    context.fillText(item.label, x + barWidth / 2, height - 16);
+                }
+            });
+        })();
+    </script>
+}

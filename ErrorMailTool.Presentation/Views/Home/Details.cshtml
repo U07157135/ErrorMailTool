@@ -1,0 +1,81 @@
+@model ErrorMailTool.BLL.Models.ErrorMailDetailDto
+
+@{
+    ViewData["Title"] = "ErrorMail Details";
+}
+
+<section class="detail-header">
+    <div>
+        <a asp-action="Index" class="back-link">返回 Dashboard</a>
+        <h1>@Model.Subject</h1>
+        <p>@Model.FolderName</p>
+    </div>
+    <span class="status-pill @(Model.IsContentComplete ? "status-ok" : "status-warning")">
+        @(Model.IsContentComplete ? "資料完整" : "資料不完整")
+    </span>
+</section>
+
+<section class="detail-grid">
+    <div class="detail-card">
+        <span>發生時間</span>
+        <strong>@(Model.OccurredAt?.ToString("yyyy/MM/dd HH:mm:ss") ?? "-")</strong>
+    </div>
+    <div class="detail-card">
+        <span>PostedDate</span>
+        <strong>@(Model.PostedDate?.ToString("yyyy/MM/dd HH:mm:ss") ?? "-")</strong>
+    </div>
+    <div class="detail-card">
+        <span>From</span>
+        <strong>@(string.IsNullOrWhiteSpace(Model.From) ? "-" : Model.From)</strong>
+    </div>
+    <div class="detail-card">
+        <span>版本</span>
+        <strong>@Model.Version</strong>
+    </div>
+</section>
+
+<section class="metadata-section">
+    <dl>
+        <dt>分類</dt>
+        <dd>@Model.Category</dd>
+        <dt>系統</dt>
+        <dd>@Model.SystemName</dd>
+        <dt>客戶</dt>
+        <dd>@Model.CustomerName</dd>
+        <dt>店別</dt>
+        <dd>@Model.StoreName</dd>
+        <dt>資料夾</dt>
+        <dd>@Model.FolderPath</dd>
+    </dl>
+</section>
+
+<section class="content-section">
+    <div class="section-heading">
+        <h2>Mail Body</h2>
+        <span>@(Model.HasContentFile ? "content.txt" : "找不到 content.txt")</span>
+    </div>
+    <pre class="mail-body">@Model.Body</pre>
+</section>
+
+<section class="attachment-section">
+    <div class="section-heading">
+        <h2>附件</h2>
+        <span>@Model.Attachments.Count 個檔案</span>
+    </div>
+    @if (Model.Attachments.Count == 0)
+    {
+        <p class="empty-text">沒有附件。</p>
+    }
+    else
+    {
+        <div class="list-group">
+            @foreach (var attachment in Model.Attachments)
+            {
+                <div class="list-group-item d-flex justify-content-between align-items-center">
+                    <span>@attachment.FileName</span>
+                    <span class="text-muted">@attachment.DisplaySize</span>
+                </div>
+            }
+        </div>
+    }
+</section>
