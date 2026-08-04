@@ -1,0 +1,114 @@
+Sub Initialize
+	Dim session As New NotesSession
+	Dim db As NotesDatabase
+	Dim coll As NotesDocumentCollection
+	Dim doc As NotesDocument
+	Dim subject As String, sanitizedSubject As String
+	Dim postedDate As String, folderKey As String
+	Dim mailDateTime As NotesDateTime, dateStamp As String
+	Dim folderPath As String, filename As String
+	Dim fnum As Integer, lognum As Integer
+	Dim rtitem As NotesRichTextItem, obj As NotesEmbeddedObject
+	Dim folderDict List As Integer
+	Dim msg As String
+	Dim count As Integer
+	Dim checkPath As String
+	
+	Set db = session.CurrentDatabase
+	Set view = db.GetView("ErrorMail") ' 假設 ErrorMail 是你的目標資料夾
+	view.AutoUpdate = False
+	Set doc = view.GetFirstDocument
+	
+	count = 0
+	
+	If Dir$(EXPORT_PATH, 16) = "" Then
+		Msgbox "請先建立備份根資料夾：" & EXPORT_PATH
+		Exit Sub
+	End If
+	
+	lognum = Freefile
+	Open EXPORT_PATH & "missing_attachments.log" For Append As lognum
+	
+	Set doc = view.GetFirstDocument
+	While Not doc Is Nothing
+		subject = doc.GetItemValue("Subject")(0)
+		
+		If Instr(subject, "[Crash]") > 0 And Instr(subject, "[點餐通2.0]") > 0 And Instr(subject, "[異常回報]") = 0 And Instr(subject, "回覆") = 0 And Instr(subject, "Re") = 0 Then
+			postedDate = doc.GetItemValue("PostedDate")(0)
+			Set mailDateTime = New NotesDateTime(postedDate)
+			dateStamp = Format(mailDateTime.LSLocalTime, "yyyymmdd_hhnnss") ' 加入秒數以避免衝突
+			
+			sanitizedSubject = SanitizeFileName(subject)
+			folderKey = sanitizedSubject & "_" & dateStamp
+			
+            ' 同 key 發生重複，則加編號
+			If Iselement(folderDict(folderKey)) Then
+				folderDict(folderKey) = folderDict(folderKey) + 1
+				folderKey = folderKey & "_" & Cstr(folderDict(folderKey))
+			Else
+				folderDict(folderKey) = 1
+			End If
+			
+			folderPath = EXPORT_PATH & folderKey & "\"
+			
+			checkPath = Left$(folderPath, Len(folderPath) - 1)
+			
+			If Dir$(checkPath, 16) <> "" Then
+				Set doc = view.GetNextDocument(doc)
+				Goto NextDoc
+			End If
+			
+' 若不存在則繼續建立資料夾與備份
+			Call CreateFolder(folderPath)
+			count = count + 1
+			
+            ' 寫入 content.txt
+			filename = folderPath & "content.txt"
+			fnum = Freefile
+			Open filename For Output As fnum
+			Print #fnum, "Subject: " & subject
+			Print #fnum, "From: " & doc.GetItemValue("From")(0)
+			Print #fnum, "PostedDate: " & postedDate
+			Print #fnum, "Body:"
+			If doc.HasItem("Body") Then
+				Print #fnum, doc.GetItemValue("Body")(0)
+			End If
+			Close fnum
+			
+            ' 儲存附件
+			On Error Resume Next
+			If doc.HasItem("Body") Then
+				Set rtitem = doc.GetFirstItem("Body")
+				If Not rtitem Is Nothing Then
+					Forall o In rtitem.EmbeddedObjects
+						Set obj = o
+						If obj.Type = EMBED_ATTACHMENT Then
+							Dim originalName As String, cleanedName As String, targetPath As String
+							originalName = obj.Source
+							cleanedName = SanitizeFileName(originalName)
+							targetPath = folderPath & cleanedName
+							
+							Call obj.ExtractFile(targetPath)
+							If Err <> 0 Or Len(Dir$(targetPath)) = 0 Then
+								msg = "附件提取失敗！" & Chr(13) & _
+								"信件主旨: " & subject & Chr(13) & _
+								"原始附件名稱: " & originalName & Chr(13) & _
+								"錯誤碼: " & Cstr(Err) & Chr(13) & _
+								"錯誤原因: " & Error$
+								Print #lognum, msg
+								Err = 0
+							End If
+						End If
+					End Forall
+				End If
+			End If
+			On Error Goto 0
+		End If
+		Set doc = view.GetNextDocument(doc)
+NextDoc:
+	Wend
+	
+	Close lognum
+	Msgbox "共備份 " & count & " 封信件至：" & EXPORT_PATH & Chr(13) & _
+	"如有附件提取失敗，請查看 missing_attachments.log"
+End Sub

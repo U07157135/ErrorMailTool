@@ -1,5 +1,5 @@
 <Solution>
-  <Project Path="ErrorMailTool.BLL/ErrorMailTool.BLL.csproj" />
-  <Project Path="ErrorMailTool.DAL/ErrorMailTool.DAL.csproj" />
-  <Project Path="ErrorMailTool.Presentation/ErrorMailTool.Presentation.csproj" />
+  <Project Path="src/ErrorMailTool.BLL/ErrorMailTool.BLL.csproj" />
+  <Project Path="src/ErrorMailTool.DAL/ErrorMailTool.DAL.csproj" />
+  <Project Path="src/ErrorMailTool.Presentation/ErrorMailTool.Presentation.csproj" />
 </Solution>
